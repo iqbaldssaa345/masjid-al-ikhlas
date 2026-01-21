@@ -2,62 +2,69 @@
 session_start();
 include "../config/koneksi.php";
 
-if(!isset($_SESSION['role']) || $_SESSION['role']!="petugas"){
-    header("location:../login.php");
+// CEK LOGIN
+if(!isset($_SESSION['user_id']) || $_SESSION['role']!="pengunjung"){
+    header("Location: ../login.php");
     exit;
 }
 
-$dari   = $_GET['dari'] ?? date('Y-m-01');
-$sampai = $_GET['sampai'] ?? date('Y-m-d');
-$jenis  = $_GET['jenis'] ?? '';
+$id_user = $_SESSION['user_id'];
+$pesan = "";
 
-$where = "WHERE tanggal BETWEEN '$dari' AND '$sampai'";
-if($jenis!='') $where .= " AND jenis='$jenis'";
+/* =======================
+   SIMPAN LAPORAN
+======================= */
+if(isset($_POST['kirim'])){
+    $judul = mysqli_real_escape_string($koneksi,$_POST['judul']);
+    $isi   = mysqli_real_escape_string($koneksi,$_POST['isi']);
 
-$q = mysqli_query($koneksi,"
-    SELECT keuangan.*, users.nama 
-    FROM keuangan 
-    LEFT JOIN users ON keuangan.user_id=users.id
-    $where
-    ORDER BY tanggal ASC
+    if($judul=="" || $isi==""){
+        $pesan = "Judul dan isi laporan wajib diisi!";
+    }else{
+        mysqli_query($koneksi,"
+            INSERT INTO laporan (id_user, judul, isi, status)
+            VALUES ('$id_user','$judul','$isi','baru')
+        ");
+        header("Location: laporan.php");
+        exit;
+    }
+}
+
+/* =======================
+   DATA LAPORAN USER
+======================= */
+$data = mysqli_query($koneksi,"
+    SELECT * FROM laporan
+    WHERE id_user='$id_user'
+    ORDER BY tanggal DESC
 ");
-
-$masuk = mysqli_fetch_assoc(
-    mysqli_query($koneksi,"SELECT SUM(jumlah) total FROM keuangan WHERE jenis='infaq' AND tanggal BETWEEN '$dari' AND '$sampai'")
-)['total'] ?? 0;
-
-$keluar = mysqli_fetch_assoc(
-    mysqli_query($koneksi,"SELECT SUM(jumlah) total FROM keuangan WHERE jenis='dkm' AND tanggal BETWEEN '$dari' AND '$sampai'")
-)['total'] ?? 0;
-
-$saldo = $masuk - $keluar;
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Laporan Keuangan Masjid</title>
+<title>Laporan Pengunjung</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 
 <style>
-body{font-family:'Poppins',sans-serif;background:#f4f6f9}
-.card{border:none;border-radius:22px}
-.stat-card{
-    color:#fff;
-    border-radius:24px;
-    padding:24px;
+body{
+    font-family:'Poppins',sans-serif;
+    background:linear-gradient(180deg,#f8fafc,#eef2f7);
 }
-.stat-card i{font-size:34px;opacity:.9}
-.gradient-green{background:linear-gradient(135deg,#198754,#28a745)}
-.gradient-red{background:linear-gradient(135deg,#dc3545,#fd7e14)}
-.gradient-blue{background:linear-gradient(135deg,#0d6efd,#6610f2)}
-.table th{text-align:center}
-@media print{
-    .no-print{display:none}
-    body{background:#fff}
+.navbar{
+    background:linear-gradient(135deg,#0d6efd,#198754);
+}
+.card{
+    border:none;
+    border-radius:22px;
+}
+.badge{
+    border-radius:12px;
+    padding:6px 12px;
 }
 </style>
 </head>
@@ -65,151 +72,101 @@ body{font-family:'Poppins',sans-serif;background:#f4f6f9}
 <body>
 
 <!-- NAVBAR -->
-<nav class="navbar navbar-dark bg-primary shadow no-print">
-<div class="container-fluid px-4">
-<span class="navbar-brand fw-bold">📑 Laporan Keuangan Masjid</span>
-<a href="index.php" class="btn btn-outline-light btn-sm rounded-pill">
-<i class="bi bi-arrow-left"></i> Dashboard
-</a>
+<nav class="navbar navbar-dark shadow">
+<div class="container">
+    <span class="navbar-brand fw-bold">
+        📝 Laporan Pengunjung
+    </span>
+    <a href="index.php" class="btn btn-outline-light btn-sm rounded-pill">
+        <i class="bi bi-house"></i> Beranda
+    </a>
 </div>
 </nav>
 
-<div class="container py-4">
+<div class="container py-5">
 
-<!-- FILTER -->
-<div class="card shadow-sm mb-4 no-print">
+<!-- FORM LAPORAN -->
+<div class="card shadow-sm mb-4">
 <div class="card-body">
-<form class="row g-3 align-items-end">
 
-<div class="col-md-3">
-<label class="fw-semibold">Dari Tanggal</label>
-<input type="date" name="dari" value="<?= $dari ?>" class="form-control">
+<h5 class="fw-bold mb-3">
+    <i class="bi bi-pencil-square"></i> Kirim Laporan
+</h5>
+
+<?php if($pesan!=""){ ?>
+<div class="alert alert-danger"><?= $pesan ?></div>
+<?php } ?>
+
+<form method="post">
+<div class="mb-3">
+    <label class="form-label">Judul Laporan</label>
+    <input type="text" name="judul" class="form-control"
+           placeholder="Contoh: Lampu Masjid Mati" required>
 </div>
 
-<div class="col-md-3">
-<label class="fw-semibold">Sampai</label>
-<input type="date" name="sampai" value="<?= $sampai ?>" class="form-control">
+<div class="mb-3">
+    <label class="form-label">Isi Laporan</label>
+    <textarea name="isi" rows="4" class="form-control"
+              placeholder="Jelaskan laporan secara lengkap..." required></textarea>
 </div>
 
-<div class="col-md-3">
-<label class="fw-semibold">Jenis</label>
-<select name="jenis" class="form-select">
-<option value="">Semua</option>
-<option value="infaq" <?= $jenis=='infaq'?'selected':'' ?>>Infaq</option>
-<option value="dkm" <?= $jenis=='dkm'?'selected':'' ?>>Pengeluaran (DKM)</option>
-</select>
-</div>
-
-<div class="col-md-3 d-grid gap-2">
-<button class="btn btn-primary">
-<i class="bi bi-search"></i> Tampilkan
+<button name="kirim" class="btn btn-success rounded-pill px-4">
+    <i class="bi bi-send"></i> Kirim Laporan
 </button>
-<button type="button" onclick="window.print()" class="btn btn-success">
-<i class="bi bi-printer"></i> Cetak Laporan
-</button>
-</div>
-
 </form>
+
 </div>
 </div>
 
-<!-- STATISTIK -->
-<div class="row g-4 mb-4">
-
-<div class="col-md-4">
-<div class="stat-card gradient-green shadow">
-<i class="bi bi-arrow-down-circle"></i>
-<h6 class="mt-3">Total Pemasukan</h6>
-<h4 class="fw-bold">Rp <?= number_format($masuk,0,',','.') ?></h4>
-</div>
-</div>
-
-<div class="col-md-4">
-<div class="stat-card gradient-red shadow">
-<i class="bi bi-arrow-up-circle"></i>
-<h6 class="mt-3">Total Pengeluaran</h6>
-<h4 class="fw-bold">Rp <?= number_format($keluar,0,',','.') ?></h4>
-</div>
-</div>
-
-<div class="col-md-4">
-<div class="stat-card gradient-blue shadow">
-<i class="bi bi-wallet2"></i>
-<h6 class="mt-3">Saldo Akhir</h6>
-<h4 class="fw-bold">Rp <?= number_format($saldo,0,',','.') ?></h4>
-</div>
-</div>
-
-</div>
-
-<!-- TABEL -->
+<!-- RIWAYAT LAPORAN -->
 <div class="card shadow-sm">
 <div class="card-body">
 
-<!-- HEADER CETAK -->
-<div class="text-center mb-4">
-<h5 class="fw-bold mb-1">LAPORAN KEUANGAN MASJID AL-IKHLAS</h5>
-<small class="text-muted">
-Periode <?= date('d-m-Y',strtotime($dari)) ?> s/d <?= date('d-m-Y',strtotime($sampai)) ?>
-</small>
-<hr>
-</div>
+<h5 class="fw-bold mb-3">
+    <i class="bi bi-list-check"></i> Riwayat Laporan Saya
+</h5>
 
 <div class="table-responsive">
-<table class="table table-bordered table-striped align-middle">
-
-<thead class="table-primary">
+<table class="table table-hover align-middle">
+<thead class="table-light">
 <tr>
-<th>No</th>
-<th>Tanggal</th>
-<th>Keterangan</th>
-<th>Jenis</th>
-<th>Jumlah</th>
-<th>Petugas</th>
+    <th>Tanggal</th>
+    <th>Judul</th>
+    <th>Status</th>
 </tr>
 </thead>
-
 <tbody>
-<?php
-$no=1;
-if(mysqli_num_rows($q)==0){
-    echo "<tr><td colspan='6' class='text-center text-muted'>Data tidak tersedia</td></tr>";
-}
-while($d=mysqli_fetch_assoc($q)){
-?>
+
+<?php if(mysqli_num_rows($data)>0){ ?>
+<?php while($d=mysqli_fetch_assoc($data)){ ?>
 <tr>
-<td class="text-center"><?= $no++ ?></td>
-<td><?= date('d-m-Y',strtotime($d['tanggal'])) ?></td>
-<td><?= htmlspecialchars($d['keterangan']) ?></td>
-<td class="text-center">
-<span class="badge bg-<?= $d['jenis']=='infaq'?'success':'danger' ?>">
-<?= strtoupper($d['jenis']) ?>
-</span>
+<td><?= date('d-m-Y H:i',strtotime($d['tanggal'])) ?></td>
+<td>
+    <strong><?= htmlspecialchars($d['judul']) ?></strong><br>
+    <small class="text-muted"><?= htmlspecialchars($d['isi']) ?></small>
 </td>
-<td class="text-end fw-semibold">Rp <?= number_format($d['jumlah'],0,',','.') ?></td>
-<td><?= htmlspecialchars($d['nama'] ?? '-') ?></td>
+<td>
+<?php
+if($d['status']=="baru"){
+    echo '<span class="badge bg-secondary">Baru</span>';
+}elseif($d['status']=="diproses"){
+    echo '<span class="badge bg-warning text-dark">Diproses</span>';
+}else{
+    echo '<span class="badge bg-success">Selesai</span>';
+}
+?>
+</td>
 </tr>
 <?php } ?>
+<?php } else { ?>
+<tr>
+<td colspan="3" class="text-center text-muted">
+    Belum ada laporan
+</td>
+</tr>
+<?php } ?>
+
 </tbody>
-
-<tfoot class="table-light fw-bold">
-<tr>
-<td colspan="4" class="text-end">TOTAL PEMASUKAN</td>
-<td class="text-end text-success">Rp <?= number_format($masuk,0,',','.') ?></td>
-<td></td>
-</tr>
-<tr>
-<td colspan="4" class="text-end">TOTAL PENGELUARAN</td>
-<td class="text-end text-danger">Rp <?= number_format($keluar,0,',','.') ?></td>
-<td></td>
-</tr>
-<tr>
-<td colspan="4" class="text-end">SALDO AKHIR</td>
-<td class="text-end text-primary">Rp <?= number_format($saldo,0,',','.') ?></td>
-<td></td>
-</tr>
-</tfoot>
-
 </table>
 </div>
 
@@ -218,9 +175,10 @@ while($d=mysqli_fetch_assoc($q)){
 
 </div>
 
-<footer class="text-center py-3 text-muted">
-© <?= date('Y') ?> Masjid Al-Ikhlas • Sistem Keuangan Masjid
+<footer class="text-center py-4 text-muted">
+© <?= date('Y') ?> Sistem Laporan Pengunjung
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

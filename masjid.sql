@@ -40,7 +40,7 @@ CREATE TABLE `info_masjid` (
 
 INSERT INTO `info_masjid` (`id`, `judul`, `isi`) VALUES
 (1, 'Profil Masjid', 'Masjid Al-Ikhlas berdiri sejak tahun 1994 diresmikan oleh bupati bogor dan menjadi pusat kegiatan ibadah serta sosial masyarakat sekitar '),
-(2, 'Jadwal Sholat', 'Subuh 04:35 WIB | Dzuhur 12:00 WIB | Ashar 15:15 WIB | Maghrib 18:10 WIB | Isya 19:20 WIB'),
+(2, 'Jadwal Sholat', 'Imsak 04:36 WIB | Subuh 04:46 WIB | Syuruq 06:02 WIB | Dzuhur 12:03 WIB | Ashar 15:24 WIB | Maghrib 17:56 WIB | Isya 19:09 WIB'),
 (3, 'Pengumuman', 'setiap jumat '),
 (4, 'Laporan Keuangan', 'Laporan keuangan masjid diperbarui secara berkala dan dapat dilihat pada display TV masjid.');
 
@@ -119,6 +119,36 @@ INSERT INTO `laporan` (`id`, `id_user`, `judul`, `isi`, `status`, `tanggal`) VAL
 (4, 3, 'listrik mati ', 'woi berbaiki\r\n', 'baru', '2026-01-21 14:27:39'),
 (5, 5, 'lampu mati', 'lampu mati', 'baru', '2026-01-21 18:58:48'),
 (6, 4, 'berbaiki', 'audio burik', 'diproses', '2026-04-18 07:54:41');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `jadwal_sholat`
+--
+
+CREATE TABLE IF NOT EXISTS `jadwal_sholat` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `mode_jadwal` varchar(20) NOT NULL DEFAULT 'manual',
+  `kota` varchar(100) NOT NULL DEFAULT 'Kab. Bogor (Cibinong)',
+  `jeda_iqomah` int(11) NOT NULL DEFAULT 10,
+  `iqomah_subuh` int(11) NOT NULL DEFAULT 7,
+  `iqomah_dzuhur` int(11) NOT NULL DEFAULT 4,
+  `iqomah_ashar` int(11) NOT NULL DEFAULT 4,
+  `iqomah_maghrib` int(11) NOT NULL DEFAULT 6,
+  `iqomah_isya` int(11) NOT NULL DEFAULT 5,
+  `imsak` varchar(10) NOT NULL DEFAULT '04:36',
+  `subuh` varchar(10) NOT NULL DEFAULT '04:46',
+  `syuruq` varchar(10) NOT NULL DEFAULT '06:02',
+  `dzuhur` varchar(10) NOT NULL DEFAULT '12:03',
+  `ashar` varchar(10) NOT NULL DEFAULT '15:24',
+  `maghrib` varchar(10) NOT NULL DEFAULT '17:56',
+  `isya` varchar(10) NOT NULL DEFAULT '19:09',
+  `tanggal` date DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO `jadwal_sholat` (`id`, `mode_jadwal`, `kota`, `jeda_iqomah`, `iqomah_subuh`, `iqomah_dzuhur`, `iqomah_ashar`, `iqomah_maghrib`, `iqomah_isya`, `imsak`, `subuh`, `syuruq`, `dzuhur`, `ashar`, `maghrib`, `isya`, `tanggal`) VALUES
+(1, 'kemenag', 'Kab. Bogor (Cibinong)', 10, 7, 4, 4, 6, 5, '04:36', '04:46', '06:02', '12:03', '15:24', '17:56', '19:09', '2026-07-20');
 
 -- --------------------------------------------------------
 

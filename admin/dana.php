@@ -7,216 +7,452 @@ if(!isset($_SESSION['role']) || $_SESSION['role']!="admin"){
     exit;
 }
 
-/* TAMBAH DATA */
-if(isset($_POST['tambah'])){
-    mysqli_query($koneksi,"INSERT INTO keuangan 
-        (tanggal,jenis,keterangan,jumlah,user_id) VALUES (
-        '$_POST[tanggal]',
-        '$_POST[jenis]',
-        '$_POST[keterangan]',
-        '$_POST[jumlah]',
-        '$_SESSION[id]'
-    )");
-    header("location:dana.php");
+// MIGRATION ALTER TABLE
+@mysqli_query($koneksi, "ALTER TABLE `keuangan` ADD COLUMN `metode_bayar` varchar(50) NOT NULL DEFAULT 'Cash'");
+@mysqli_query($koneksi, "ALTER TABLE `keuangan` ADD COLUMN `bukti_bayar` varchar(255) DEFAULT NULL");
+
+// DIREKTORI UPLOAD
+$uploadDir = "../uploads/bukti/";
+if (!file_exists($uploadDir)) {
+    @mkdir($uploadDir, 0777, true);
 }
 
-/* EDIT DATA */
-if(isset($_POST['edit'])){
-    mysqli_query($koneksi,"UPDATE keuangan SET
-        tanggal='$_POST[tanggal]',
-        jenis='$_POST[jenis]',
-        keterangan='$_POST[keterangan]',
-        jumlah='$_POST[jumlah]'
-        WHERE id='$_POST[id]'
-    ");
+/* TAMBAH DATA WITH BUKTI */
+if(isset($_POST['tambah'])){
+    $tanggal      = mysqli_real_escape_string($koneksi, $_POST['tanggal']);
+    $jenis        = mysqli_real_escape_string($koneksi, $_POST['jenis']);
+    $keterangan   = mysqli_real_escape_string($koneksi, $_POST['keterangan']);
+    $metode_bayar = mysqli_real_escape_string($koneksi, $_POST['metode_bayar']);
+    $jumlah       = (int)$_POST['jumlah'];
+    $user_id      = $_SESSION['user_id'];
+
+    $bukti_bayar = NULL;
+    if(isset($_FILES['bukti']) && $_FILES['bukti']['error'] == 0){
+        $ext = pathinfo($_FILES['bukti']['name'], PATHINFO_EXTENSION);
+        $fileName = "dana_" . time() . "_" . rand(100, 999) . "." . strtolower($ext);
+        $allowed = ['jpg', 'jpeg', 'png', 'pdf'];
+        if(in_array(strtolower($ext), $allowed)){
+            if(move_uploaded_file($_FILES['bukti']['tmp_name'], $uploadDir . $fileName)){
+                $bukti_bayar = $fileName;
+            }
+        }
+    }
+
+    $buktiSql = $bukti_bayar ? "'$bukti_bayar'" : "NULL";
+
+    mysqli_query($koneksi,"INSERT INTO keuangan 
+        (tanggal, jenis, keterangan, jumlah, user_id, metode_bayar, bukti_bayar) VALUES (
+        '$tanggal', '$jenis', '$keterangan', '$jumlah', '$user_id', '$metode_bayar', $buktiSql
+    )");
+    $_SESSION['pesan'] = "Data keuangan kas berhasil ditambahkan!";
     header("location:dana.php");
+    exit;
+}
+
+/* EDIT DATA WITH BUKTI */
+if(isset($_POST['edit'])){
+    $id           = (int)$_POST['id'];
+    $tanggal      = mysqli_real_escape_string($koneksi, $_POST['tanggal']);
+    $jenis        = mysqli_real_escape_string($koneksi, $_POST['jenis']);
+    $keterangan   = mysqli_real_escape_string($koneksi, $_POST['keterangan']);
+    $metode_bayar = mysqli_real_escape_string($koneksi, $_POST['metode_bayar']);
+    $jumlah       = (int)$_POST['jumlah'];
+
+    $queryBukti = "";
+    if(isset($_FILES['bukti']) && $_FILES['bukti']['error'] == 0){
+        $ext = pathinfo($_FILES['bukti']['name'], PATHINFO_EXTENSION);
+        $fileName = "dana_" . time() . "_" . rand(100, 999) . "." . strtolower($ext);
+        $allowed = ['jpg', 'jpeg', 'png', 'pdf'];
+        if(in_array(strtolower($ext), $allowed)){
+            if(move_uploaded_file($_FILES['bukti']['tmp_name'], $uploadDir . $fileName)){
+                $queryBukti = ", bukti_bayar='$fileName'";
+            }
+        }
+    }
+
+    mysqli_query($koneksi,"UPDATE keuangan SET
+        tanggal='$tanggal',
+        jenis='$jenis',
+        keterangan='$keterangan',
+        metode_bayar='$metode_bayar',
+        jumlah='$jumlah'
+        $queryBukti
+        WHERE id='$id'
+    ");
+    $_SESSION['pesan'] = "Data keuangan berhasil diperbarui!";
+    header("location:dana.php");
+    exit;
 }
 
 /* HAPUS DATA */
 if(isset($_GET['hapus'])){
-    mysqli_query($koneksi,"DELETE FROM keuangan WHERE id='$_GET[hapus]'");
+    $id = (int)$_GET['hapus'];
+    mysqli_query($koneksi,"DELETE FROM keuangan WHERE id='$id'");
+    $_SESSION['pesan'] = "Data keuangan berhasil dihapus!";
     header("location:dana.php");
+    exit;
 }
+
+/* EDIT LOAD DATA */
+$edit = false;
+$dEdit = null;
+if(isset($_GET['edit_id'])){
+    $edit = true;
+    $id_edit = (int)$_GET['edit_id'];
+    $qEdit = mysqli_query($koneksi,"SELECT * FROM keuangan WHERE id='$id_edit'");
+    $dEdit = mysqli_fetch_assoc($qEdit);
+}
+
+/* HITUNG RINGKASAN SALDO */
+$infaq = mysqli_fetch_assoc(mysqli_query($koneksi,"SELECT SUM(jumlah) AS total FROM keuangan WHERE jenis='infaq'"))['total'] ?? 0;
+$dkm = mysqli_fetch_assoc(mysqli_query($koneksi,"SELECT SUM(jumlah) AS total FROM keuangan WHERE jenis IN ('dkm', 'pengeluaran')"))['total'] ?? 0;
+$saldo = $infaq - $dkm;
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8">
-<title>Data Dana Masjid</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Dana Kas Masjid | Admin Panel</title>
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-<style>
-.card{border-radius:18px}
-</style>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: #f4f6f9;
+            min-height: 100vh;
+            color: #212529;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .navbar-custom {
+            background: linear-gradient(135deg, #198754, #20c997);
+        }
+
+        .clock-badge {
+            background: rgba(0, 0, 0, 0.22);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 30px;
+            padding: 6px 16px;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .card-custom {
+            background: #ffffff;
+            border-radius: 22px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+            overflow: hidden;
+        }
+
+        .stat-card-custom {
+            border-radius: 20px;
+            padding: 22px 24px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.04);
+            border: none;
+        }
+
+        .badge-infaq {
+            background: rgba(25, 135, 84, 0.12);
+            color: #198754;
+            border: 1px solid rgba(25, 135, 84, 0.3);
+            font-weight: 800;
+            padding: 5px 12px;
+            border-radius: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 0.8rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .badge-dkm {
+            background: rgba(220, 53, 69, 0.12);
+            color: #dc3545;
+            border: 1px solid rgba(220, 53, 69, 0.3);
+            font-weight: 800;
+            padding: 5px 12px;
+            border-radius: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 0.8rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .form-control-custom, .form-select-custom {
+            border-radius: 14px;
+            border: 1.5px solid #e2e8f0;
+            padding: 10px 14px;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+    </style>
 </head>
 
-<body class="bg-light">
+<body>
 
-<div class="container py-4">
+    <!-- NAVBAR -->
+    <nav class="navbar navbar-dark navbar-custom shadow-sm py-3">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand fw-bold fs-5 d-flex align-items-center gap-2">
+                ⚙ Panel Admin | Kelola Dana Kas Masjid
+            </span>
+            <div class="text-white d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                <div class="clock-badge d-flex align-items-center gap-2 me-2">
+                    <i class="bi bi-clock-history text-warning"></i>
+                    <span id="adminClock" class="text-warning">--:--:-- WIB</span>
+                </div>
+                <a href="index.php" class="btn btn-outline-light btn-sm rounded-pill px-3">
+                    <i class="bi bi-arrow-left"></i> Dashboard Admin
+                </a>
+            </div>
+        </div>
+    </nav>
 
-<!-- HEADER -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold">💰 Data Dana Masjid</h4>
-    <div>
-        <a href="index.php" class="btn btn-secondary btn-sm">
-            ⬅ Dashboard
-        </a>
-        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#tambah">
-            <i class="bi bi-plus-circle"></i> Tambah
-        </button>
+    <!-- CONTENT MAIN -->
+    <div class="container py-4">
+
+        <!-- ALERT PESAN -->
+        <?php if(isset($_SESSION['pesan'])){ ?>
+            <div class="alert alert-success alert-dismissible fade show rounded-4 mb-4 shadow-sm" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i> <?= $_SESSION['pesan']; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php unset($_SESSION['pesan']); ?>
+        <?php } ?>
+
+        <!-- RINGKASAN SALDO KAS -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="stat-card-custom bg-success text-white shadow-sm">
+                    <small class="opacity-75 text-uppercase fw-bold d-block mb-1">TOTAL PEMASUKAN INFAQ</small>
+                    <h3 class="fw-extrabold m-0">Rp <?= number_format($infaq,0,',','.') ?></h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card-custom bg-danger text-white shadow-sm">
+                    <small class="opacity-75 text-uppercase fw-bold d-block mb-1">TOTAL PENGELUARAN DKM</small>
+                    <h3 class="fw-extrabold m-0">Rp <?= number_format($dkm,0,',','.') ?></h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card-custom bg-white border border-success text-success shadow-sm">
+                    <small class="text-secondary text-uppercase fw-bold d-block mb-1">SALDO KAS BERSIH</small>
+                    <h3 class="fw-extrabold text-success m-0">Rp <?= number_format($saldo,0,',','.') ?></h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            
+            <!-- FORM INPUT / EDIT TRANSAKSI -->
+            <div class="col-lg-4">
+                <div class="card card-custom p-4">
+                    <h5 class="fw-bold text-dark mb-3">
+                        <i class="bi bi-<?= $edit?'pencil-square text-warning':'plus-circle-fill text-success' ?> me-2"></i>
+                        <?= $edit ? 'Edit Transaksi Kas' : 'Tambah Transaksi Dana' ?>
+                    </h5>
+
+                    <form method="post" enctype="multipart/form-data">
+                        <?php if($edit){ ?>
+                            <input type="hidden" name="id" value="<?= $dEdit['id'] ?>">
+                        <?php } ?>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-secondary small">Tanggal Transaksi</label>
+                            <input type="date" name="tanggal" class="form-control form-control-custom" value="<?= $edit ? $dEdit['tanggal'] : date('Y-m-d') ?>" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-secondary small">Jenis Transaksi</label>
+                            <select name="jenis" class="form-select form-select-custom fw-bold" required>
+                                <option value="infaq" <?= $edit && $dEdit['jenis']=='infaq' ? 'selected':'' ?>>💚 Pemasukan (Infaq)</option>
+                                <option value="dkm" <?= $edit && ($dEdit['jenis']=='dkm'||$dEdit['jenis']=='pengeluaran') ? 'selected':'' ?>>🔴 Pengeluaran (DKM)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-secondary small">Metode Pembayaran</label>
+                            <select name="metode_bayar" class="form-select form-select-custom fw-bold text-primary" required>
+                                <option value="Tunai" <?= $edit && ($dEdit['metode_bayar']??'')=='Tunai' ? 'selected':'' ?>>Tunai / Cash</option>
+                                <option value="BSI Transfer" <?= $edit && ($dEdit['metode_bayar']??'')=='BSI Transfer' ? 'selected':'' ?>>BSI (Bank Syariah Indonesia)</option>
+                                <option value="BCA Transfer" <?= $edit && ($dEdit['metode_bayar']??'')=='BCA Transfer' ? 'selected':'' ?>>Bank BCA</option>
+                                <option value="Mandiri Transfer" <?= $edit && ($dEdit['metode_bayar']??'')=='Mandiri Transfer' ? 'selected':'' ?>>Bank Mandiri</option>
+                                <option value="BRI Transfer" <?= $edit && ($dEdit['metode_bayar']??'')=='BRI Transfer' ? 'selected':'' ?>>Bank BRI</option>
+                                <option value="QRIS Scan" <?= $edit && ($dEdit['metode_bayar']??'')=='QRIS Scan' ? 'selected':'' ?>>QRIS Scan Multi-Payment</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-secondary small">Keterangan / Niat Infaq</label>
+                            <input type="text" name="keterangan" class="form-control form-control-custom" value="<?= $edit ? htmlspecialchars($dEdit['keterangan']) : '' ?>" placeholder="Keterangan transaksi" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-secondary small">Jumlah Nominal (Rp)</label>
+                            <input type="number" name="jumlah" class="form-control form-control-custom fw-bold text-success" value="<?= $edit ? $dEdit['jumlah'] : '' ?>" placeholder="Nominal Rp" min="1" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-secondary small">Upload Resi / Bukti Bayar (Opsional)</label>
+                            <input type="file" name="bukti" class="form-control form-control-custom" accept="image/*,.pdf">
+                            <small class="text-muted" style="font-size:0.75rem;">Format: JPG, PNG, PDF (Maks 5MB)</small>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <?php if($edit){ ?>
+                                <button type="submit" name="edit" class="btn btn-warning fw-bold py-2 rounded-pill shadow-sm text-dark">
+                                    <i class="bi bi-check-lg me-1"></i> Simpan Perubahan
+                                </button>
+                                <a href="dana.php" class="btn btn-outline-secondary rounded-pill py-2 text-center">Batal</a>
+                            <?php }else{ ?>
+                                <button type="submit" name="tambah" class="btn btn-success fw-bold py-2 rounded-pill shadow-sm">
+                                    <i class="bi bi-save-fill me-1"></i> Tambah Transaksi Kas
+                                </button>
+                            <?php } ?>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- TABEL TRANSAKSI KAS & PREVIEW BUKTI -->
+            <div class="col-lg-8">
+                <div class="card card-custom p-4">
+                    <h5 class="fw-bold text-dark mb-3">
+                        <i class="bi bi-journal-text text-primary me-2"></i> Daftar Riwayat Dana Kas Masjid
+                    </h5>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-center" style="width: 50px;">NO</th>
+                                    <th>TANGGAL</th>
+                                    <th>KETERANGAN</th>
+                                    <th class="text-center">JENIS</th>
+                                    <th>METODE</th>
+                                    <th class="text-end">JUMLAH</th>
+                                    <th class="text-center">BUKTI</th>
+                                    <th class="text-center" style="width: 90px;">AKSI</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $no = 1;
+                                $q = mysqli_query($koneksi,"SELECT * FROM keuangan ORDER BY tanggal DESC, id DESC");
+                                if(mysqli_num_rows($q) == 0){
+                                    echo '<tr><td colspan="8" class="text-center text-muted py-4">Belum ada transaksi dana kas</td></tr>';
+                                }
+                                while($d = mysqli_fetch_assoc($q)){
+                                ?>
+                                <tr>
+                                    <td class="text-center fw-bold text-secondary"><?= $no++ ?></td>
+                                    <td class="fw-semibold text-dark"><?= date('d/m/Y',strtotime($d['tanggal'])) ?></td>
+                                    <td><?= htmlspecialchars($d['keterangan']) ?></td>
+                                    <td class="text-center">
+                                        <?php if($d['jenis']=='infaq'){ ?>
+                                            <span class="badge-infaq"><i class="bi bi-arrow-down-left"></i> PEMASUKAN</span>
+                                        <?php }else{ ?>
+                                            <span class="badge-dkm"><i class="bi bi-arrow-up-right"></i> PENGELUARAN</span>
+                                        <?php } ?>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border px-2 py-1 small fw-bold">
+                                            <?= htmlspecialchars($d['metode_bayar'] ?? 'Cash') ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-end fw-bold <?= $d['jenis']=='infaq'?'text-success':'text-danger' ?>">
+                                        Rp <?= number_format($d['jumlah'],0,',','.') ?>
+                                    </td>
+                                    <td class="text-center">
+                                        <?php if(!empty($d['bukti_bayar'])){ ?>
+                                            <button class="btn btn-outline-success btn-sm rounded-circle p-1" style="width:32px; height:32px;"
+                                                    onclick="viewBukti('../uploads/bukti/<?= $d['bukti_bayar'] ?>')" title="Lihat Bukti Transfer">
+                                                <i class="bi bi-file-earmark-image"></i>
+                                            </button>
+                                        <?php } else { ?>
+                                            <span class="text-muted small">-</span>
+                                        <?php } ?>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="?edit_id=<?= $d['id'] ?>" class="btn btn-outline-warning" title="Edit">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                            <a href="?hapus=<?= $d['id'] ?>" onclick="return confirm('Apakah Anda yakin ingin menghapus data ini?')" class="btn btn-outline-danger" title="Hapus">
+                                                <i class="bi bi-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php } ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
     </div>
-</div>
 
-<!-- TABEL -->
-<div class="card shadow">
-<div class="card-body">
-
-<table class="table table-bordered table-hover align-middle">
-<thead class="table-success text-center">
-<tr>
-    <th>No</th>
-    <th>Tanggal</th>
-    <th>Jenis</th>
-    <th>Keterangan</th>
-    <th>Jumlah</th>
-    <th>Aksi</th>
-</tr>
-</thead>
-<tbody>
-<?php
-$no=1;
-$q = mysqli_query($koneksi,"SELECT * FROM keuangan ORDER BY tanggal DESC");
-while($d=mysqli_fetch_assoc($q)){
-?>
-<tr>
-    <td class="text-center"><?= $no++ ?></td>
-    <td><?= $d['tanggal'] ?></td>
-    <td>
-        <span class="badge <?= $d['jenis']=='infaq'?'bg-success':'bg-primary' ?>">
-            <?= strtoupper($d['jenis']) ?>
-        </span>
-    </td>
-    <td><?= htmlspecialchars($d['keterangan']) ?></td>
-    <td class="text-end fw-bold">
-        Rp <?= number_format($d['jumlah'],0,',','.') ?>
-    </td>
-    <td class="text-center">
-        <button class="btn btn-warning btn-sm"
-                data-bs-toggle="modal"
-                data-bs-target="#edit<?= $d['id'] ?>">
-            <i class="bi bi-pencil"></i>
-        </button>
-        <a href="?hapus=<?= $d['id'] ?>"
-           onclick="return confirm('Hapus data ini?')"
-           class="btn btn-danger btn-sm">
-            <i class="bi bi-trash"></i>
-        </a>
-    </td>
-</tr>
-
-<!-- MODAL EDIT -->
-<div class="modal fade" id="edit<?= $d['id'] ?>">
-<div class="modal-dialog">
-<div class="modal-content">
-<form method="post">
-
-<div class="modal-header bg-warning">
-    <h5 class="modal-title">Edit Dana</h5>
-</div>
-
-<div class="modal-body">
-    <input type="hidden" name="id" value="<?= $d['id'] ?>">
-
-    <div class="mb-2">
-        <label>Tanggal</label>
-        <input type="date" name="tanggal" class="form-control" value="<?= $d['tanggal'] ?>" required>
+    <!-- MODAL PREVIEW BUKTI PEMBAYARAN -->
+    <div class="modal fade" id="modalBukti" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered text-center">
+            <div class="modal-content rounded-4 border-0 p-3">
+                <div class="modal-header border-0 pb-0">
+                    <h6 class="modal-title fw-bold text-dark">Resi / Bukti Pembayaran Transaksi Kas</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3">
+                    <img id="imgBukti" src="" alt="Bukti Pembayaran" class="img-fluid rounded-3 shadow border">
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="mb-2">
-        <label>Jenis</label>
-        <select name="jenis" class="form-control">
-            <option value="infaq" <?= $d['jenis']=='infaq'?'selected':'' ?>>Infaq</option>
-            <option value="dkm" <?= $d['jenis']=='dkm'?'selected':'' ?>>DKM</option>
-        </select>
-    </div>
+    <!-- FOOTER -->
+    <footer class="text-center py-4 mt-auto text-secondary small">
+        © <?= date('Y'); ?> <strong>Masjid Al-Ikhlas</strong> – Admin Panel Kelola Dana Kas Masjid
+    </footer>
 
-    <div class="mb-2">
-        <label>Keterangan</label>
-        <input type="text" name="keterangan" class="form-control" value="<?= $d['keterangan'] ?>" required>
-    </div>
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-    <div class="mb-2">
-        <label>Jumlah</label>
-        <input type="number" name="jumlah" class="form-control" value="<?= $d['jumlah'] ?>" required>
-    </div>
-</div>
+    <!-- REAL-TIME CLOCK & BUKTI MODAL SCRIPT -->
+    <script>
+        function updateAdminClock() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const clockElem = document.getElementById("adminClock");
+            if (clockElem) {
+                clockElem.textContent = `${hours}:${minutes}:${seconds} WIB`;
+            }
+        }
+        setInterval(updateAdminClock, 1000);
+        updateAdminClock();
 
-<div class="modal-footer">
-    <button name="edit" class="btn btn-warning w-100">Simpan Perubahan</button>
-</div>
-
-</form>
-</div>
-</div>
-</div>
-
-<?php } ?>
-</tbody>
-</table>
-
-</div>
-</div>
-
-</div>
-
-<!-- MODAL TAMBAH -->
-<div class="modal fade" id="tambah">
-<div class="modal-dialog">
-<div class="modal-content">
-<form method="post">
-
-<div class="modal-header bg-success text-white">
-    <h5 class="modal-title">Tambah Dana</h5>
-</div>
-
-<div class="modal-body">
-
-    <div class="mb-2">
-        <label>Tanggal</label>
-        <input type="date" name="tanggal" class="form-control" required>
-    </div>
-
-    <div class="mb-2">
-        <label>Jenis</label>
-        <select name="jenis" class="form-control">
-            <option value="infaq">Infaq</option>
-            <option value="dkm">DKM</option>
-        </select>
-    </div>
-
-    <div class="mb-2">
-        <label>Keterangan</label>
-        <input type="text" name="keterangan" class="form-control" required>
-    </div>
-
-    <div class="mb-2">
-        <label>Jumlah</label>
-        <input type="number" name="jumlah" class="form-control" required>
-    </div>
-
-</div>
-
-<div class="modal-footer">
-    <button name="tambah" class="btn btn-success w-100">Simpan</button>
-</div>
-
-</form>
-</div>
-</div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        function viewBukti(imgUrl) {
+            document.getElementById('imgBukti').src = imgUrl;
+            const modalBukti = new bootstrap.Modal(document.getElementById('modalBukti'));
+            modalBukti.show();
+        }
+    </script>
 </body>
 </html>
